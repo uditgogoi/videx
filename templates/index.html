@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VIDEX — Text to Video</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080808;
+    --surface: #111111;
+    --border: #222222;
+    --accent: #e8ff47;
+    --accent2: #ff4747;
+    --text: #f0f0f0;
+    --muted: #555;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+    opacity: 0.6;
+  }
+
+  .bg-glow { position: fixed; border-radius: 50%; filter: blur(120px); pointer-events: none; z-index: 0; }
+  .bg-glow-1 { width: 500px; height: 500px; background: rgba(232,255,71,0.06); top: -150px; left: -100px; }
+  .bg-glow-2 { width: 400px; height: 400px; background: rgba(255,71,71,0.05); bottom: 0; right: -100px; }
+
+  nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 40px;
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(20px);
+    background: rgba(8,8,8,0.85);
+  }
+
+  .logo { font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 4px; color: var(--accent); }
+  .logo span { color: var(--text); }
+
+  .nav-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .status-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: #47ff7a;
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  main {
+    position: relative;
+    z-index: 1;
+    padding-top: 70px;
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  /* LEFT */
+  .left-panel {
+    padding: 48px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: calc(100vh - 70px);
+  }
+
+  .headline {
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(44px, 5vw, 80px);
+    line-height: 0.92;
+    letter-spacing: 2px;
+    margin-bottom: 20px;
+    animation: fadeUp 0.8s ease both;
+  }
+  .headline em { color: var(--accent); font-style: normal; display: block; }
+
+  .subheadline {
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.7;
+    max-width: 380px;
+    margin-bottom: 36px;
+    animation: fadeUp 0.8s 0.1s ease both;
+  }
+
+  .prompt-section { flex: 1; display: flex; flex-direction: column; animation: fadeUp 0.8s 0.2s ease both; }
+
+  .field-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .field-label::before {
+    content: '';
+    display: inline-block;
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .prompt-box {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 20px;
+    position: relative;
+    transition: border-color 0.2s;
+    margin-bottom: 14px;
+  }
+  .prompt-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+
+  .prompt-box textarea {
+    width: 100%;
+    min-height: 130px;
+    background: transparent;
+    border: none;
+    outline: none;
+    resize: none;
+    color: var(--text);
+    font-family: 'DM Sans', sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    font-weight: 300;
+  }
+  .prompt-box textarea::placeholder { color: var(--muted); }
+  .char-count { position: absolute; bottom: 12px; right: 16px; font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); }
+
+  .style-row { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .style-chip {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 6px 14px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+  }
+  .style-chip:hover, .style-chip.active { border-color: var(--accent); color: var(--accent); background: rgba(232,255,71,0.06); }
+
+  .settings-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+  .setting-group label { display: block; font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); margin-bottom: 7px; }
+  .setting-select {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 9px 12px;
+    font-family: 'DM Sans', sans-serif;
+    font-size: 13px;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='12' height='8' viewBox='0 0 12 8' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1L6 7L11 1' stroke='%23555' stroke-width='1.5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+  }
+  .setting-select:focus { border-color: var(--accent); }
+
+  .generate-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    padding: 16px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 4px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    transition: letter-spacing 0.2s;
+  }
+  .generate-btn:hover:not(:disabled) { letter-spacing: 6px; }
+  .generate-btn:disabled { background: #333; color: var(--muted); cursor: not-allowed; letter-spacing: 4px; }
+
+  /* RIGHT */
+  .right-panel { display: flex; flex-direction: column; min-height: calc(100vh - 70px); }
+
+  .preview-area {
+    flex: 1;
+    position: relative;
+    background: #050505;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+  }
+
+  .preview-area::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.12) 2px,rgba(0,0,0,0.12) 4px);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .state { display: none; z-index: 3; text-align: center; padding: 32px; width: 100%; flex-direction: column; align-items: center; justify-content: center; }
+  .state.active { display: flex; }
+
+  /* idle */
+  .preview-icon {
+    width: 72px; height: 72px;
+    border: 2px solid var(--border);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    margin: 0 auto 20px;
+    position: relative;
+  }
+  .preview-icon::after {
+    content: '';
+    position: absolute;
+    inset: -8px;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    animation: spin 8s linear infinite;
+  }
+  @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+  .play-triangle { width:0; height:0; border-style:solid; border-width:10px 0 10px 20px; border-color:transparent transparent transparent var(--muted); margin-left:4px; }
+  .state p { font-family:'DM Mono',monospace; font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); }
+
+  /* loading */
+  .progress-ring { width:90px; height:90px; margin:0 auto 20px; position:relative; }
+  .progress-ring svg { transform:rotate(-90deg); width:100%; height:100%; }
+  .progress-ring circle { fill:none; stroke-width:2; }
+  .track { stroke:var(--border); }
+  .fill-ring { stroke:var(--accent); stroke-dasharray:251; stroke-dashoffset:251; transition:stroke-dashoffset 0.8s ease; }
+  .progress-pct { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-family:'Bebas Neue',sans-serif; font-size:24px; color:var(--accent); }
+  .progress-status { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); margin-top:8px; }
+
+  /* error */
+  .error-icon { font-size:40px; margin-bottom:16px; }
+  .error-msg { font-family:'DM Mono',monospace; font-size:12px; color:var(--accent2); margin-bottom:20px; max-width:320px; line-height:1.6; }
+  .btn-retry { background:transparent; border:1px solid var(--accent2); color:var(--accent2); padding:10px 24px; font-family:'DM Mono',monospace; font-size:11px; letter-spacing:2px; text-transform:uppercase; cursor:pointer; transition:all 0.2s; }
+  .btn-retry:hover { background:var(--accent2); color:#000; }
+
+  /* result */
+  #resultState { width:100%; }
+  .video-wrapper { width:100%; max-width:580px; margin:0 auto; }
+  video { width:100%; background:#000; border:1px solid var(--border); display:block; }
+  .video-actions { display:flex; gap:10px; margin-top:14px; max-width:580px; width:100%; }
+  .btn-action { flex:1; padding:11px 16px; font-family:'DM Mono',monospace; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; cursor:pointer; transition:all 0.2s; border:none; }
+  .btn-primary-action { background:var(--accent); color:#000; }
+  .btn-primary-action:hover { background:#fff; }
+  .btn-secondary-action { background:transparent; border:1px solid var(--border); color:var(--muted); }
+  .btn-secondary-action:hover { border-color:var(--text); color:var(--text); }
+
+  /* info bar */
+  .info-bar { border-top:1px solid var(--border); padding:14px 28px; display:flex; gap:28px; align-items:center; background:var(--surface); flex-wrap:wrap; }
+  .info-item { display:flex; flex-direction:column; gap:3px; }
+  .info-key { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:2px; text-transform:uppercase; color:var(--muted); }
+  .info-val { font-family:'DM Mono',monospace; font-size:12px; color:var(--accent); font-weight:500; }
+
+  /* history */
+  .history-strip { border-top:1px solid var(--border); padding:16px 28px; display:flex; gap:14px; overflow-x:auto; scrollbar-width:none; min-height:96px; align-items:center; }
+  .history-strip::-webkit-scrollbar { display:none; }
+  .history-empty { font-family:'DM Mono',monospace; font-size:10px; color:var(--muted); letter-spacing:1px; text-transform:uppercase; }
+  .history-item { flex-shrink:0; width:110px; cursor:pointer; }
+  .history-thumb { width:110px; height:62px; border:1px solid var(--border); overflow:hidden; transition:border-color 0.2s; }
+  .history-item:hover .history-thumb { border-color:var(--accent); }
+  .history-thumb video { width:100%; height:100%; object-fit:cover; }
+  .history-title { font-family:'DM Mono',monospace; font-size:9px; letter-spacing:1px; text-transform:uppercase; color:var(--muted); margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+  @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+
+  @media (max-width: 860px) {
+    nav { padding: 14px 20px; }
+    main { grid-template-columns: 1fr; }
+    .left-panel { border-right: none; border-bottom: 1px solid var(--border); min-height: auto; padding: 32px 20px; }
+    .right-panel { min-height: 60vh; }
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-glow bg-glow-1"></div>
+<div class="bg-glow bg-glow-2"></div>
+
+<nav>
+  <div class="logo">VID<span>EX</span></div>
+  <div class="nav-right">
+    <div class="status-dot"></div>
+    <span>WAN 2.1 — Online</span>
+  </div>
+</nav>
+
+<main>
+  <!-- LEFT -->
+  <div class="left-panel">
+    <h1 class="headline">Type your <em>vision.</em> Watch it move.</h1>
+    <p class="subheadline">Describe any scene — the AI generates a real cinematic video from your words in under a minute.</p>
+
+    <div class="prompt-section">
+      <div class="field-label">Your Prompt</div>
+      <div class="prompt-box">
+        <textarea id="promptInput" placeholder="A lone astronaut walks through a glowing alien forest, golden mist swirling around each step, cinematic wide shot..." maxlength="500" oninput="updateChar()"></textarea>
+        <div class="char-count"><span id="charCount">0</span>/500</div>
+      </div>
+
+      <div class="field-label">Style</div>
+      <div class="style-row">
+        <button class="style-chip active" onclick="selectStyle(this, '')">Default</button>
+        <button class="style-chip" onclick="selectStyle(this, ', cinematic lighting, film grain, anamorphic lens')">Cinematic</button>
+        <button class="style-chip" onclick="selectStyle(this, ', anime style, vibrant colors, Studio Ghibli')">Anime</button>
+        <button class="style-chip" onclick="selectStyle(this, ', photorealistic, 8K ultra HD, sharp')">Realistic</button>
+        <button class="style-chip" onclick="selectStyle(this, ', 3D render, Pixar style, volumetric lighting')">3D</button>
+        <button class="style-chip" onclick="selectStyle(this, ', vintage 16mm film, warm grain, faded tones')">Vintage</button>
+      </div>
+
+      <div class="field-label">Settings</div>
+      <div class="settings-row">
+        <div class="setting-group">
+          <label>Resolution</label>
+          <select class="setting-select" id="resolutionSelect" onchange="updateEstTime()">
+            <option value="480p" selected>480p — Fast (~40s)</option>
+            <option value="720p">720p — HD (~2.5min)</option>
+          </select>
+        </div>
+        <div class="setting-group">
+          <label>Quality Steps</label>
+          <select class="setting-select" id="stepsSelect">
+            <option value="20">Fast — 20 steps</option>
+            <option value="30" selected>Balanced — 30 steps</option>
+            <option value="50">High — 50 steps</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="generate-btn" id="generateBtn" onclick="generateVideo()">
+        ▶ Generate Video
+      </button>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right-panel">
+    <div class="preview-area">
+
+      <div class="state active" id="idleState">
+        <div class="preview-icon"><div class="play-triangle"></div></div>
+        <p>Your video will appear here</p>
+      </div>
+
+      <div class="state" id="loadingState">
+        <div class="progress-ring">
+          <svg viewBox="0 0 90 90">
+            <circle class="track" cx="45" cy="45" r="40"/>
+            <circle class="fill-ring" id="progressFill" cx="45" cy="45" r="40"/>
+          </svg>
+          <div class="progress-pct" id="progressPct">0%</div>
+        </div>
+        <div class="progress-status" id="progressStatus">Starting...</div>
+      </div>
+
+      <div class="state" id="errorState">
+        <div class="error-icon">⚠</div>
+        <div class="error-msg" id="errorMsg">Something went wrong.</div>
+        <button class="btn-retry" onclick="showState('idle')">Try Again</button>
+      </div>
+
+      <div class="state" id="resultState">
+        <div class="video-wrapper">
+          <video id="outputVideo" controls autoplay loop playsinline></video>
+        </div>
+        <div class="video-actions">
+          <button class="btn-action btn-primary-action" onclick="downloadVideo()">⬇ Download</button>
+          <button class="btn-action btn-secondary-action" onclick="showState('idle')">↺ New Video</button>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="info-bar">
+      <div class="info-item"><span class="info-key">Model</span><span class="info-val">WAN 2.1</span></div>
+      <div class="info-item"><span class="info-key">Est. Time</span><span class="info-val" id="estTime">~40s</span></div>
+      <div class="info-item"><span class="info-key">Est. Cost</span><span class="info-val">~$0.20</span></div>
+      <div class="info-item"><span class="info-key">Status</span><span class="info-val" id="statusText">Ready</span></div>
+    </div>
+
+    <div class="history-strip" id="historyStrip">
+      <span class="history-empty">Generated videos will appear here</span>
+    </div>
+  </div>
+</main>
+
+<script>
+  let styleModifier = '';
+  let currentVideoUrl = null;
+  let fakeTimer = null;
+  let fakeProgress = 0;
+
+  const stages = [
+    { at: 5,  msg: 'Queuing job...' },
+    { at: 15, msg: 'Loading model...' },
+    { at: 30, msg: 'Processing prompt...' },
+    { at: 50, msg: 'Generating keyframes...' },
+    { at: 70, msg: 'Rendering motion...' },
+    { at: 85, msg: 'Finalizing video...' },
+    { at: 95, msg: 'Almost there...' },
+  ];
+
+  function updateChar() {
+    document.getElementById('charCount').textContent = document.getElementById('promptInput').value.length;
+  }
+
+  function selectStyle(el, modifier) {
+    document.querySelectorAll('.style-chip').forEach(c => c.classList.remove('active'));
+    el.classList.add('active');
+    styleModifier = modifier;
+  }
+
+  function showState(name) {
+    ['idleState','loadingState','errorState','resultState'].forEach(id => {
+      document.getElementById(id).classList.remove('active');
+    });
+    document.getElementById(name + 'State').classList.add('active');
+  }
+
+  function setProgress(pct, msg) {
+    const offset = 251 * (1 - pct / 100);
+    document.getElementById('progressFill').style.strokeDashoffset = offset;
+    document.getElementById('progressPct').textContent = Math.floor(pct) + '%';
+    if (msg) document.getElementById('progressStatus').textContent = msg;
+  }
+
+  function startFakeProgress() {
+    fakeProgress = 0;
+    fakeTimer = setInterval(() => {
+      if (fakeProgress < 92) {
+        fakeProgress += Math.random() * 1.2 + 0.2;
+        const stage = [...stages].reverse().find(s => fakeProgress >= s.at);
+        setProgress(fakeProgress, stage?.msg);
+      }
+    }, 600);
+  }
+
+  function stopFakeProgress() {
+    if (fakeTimer) { clearInterval(fakeTimer); fakeTimer = null; }
+  }
+
+  function updateEstTime() {
+    const res = document.getElementById('resolutionSelect').value;
+    document.getElementById('estTime').textContent = res === '720p' ? '~2.5min' : '~40s';
+  }
+
+  async function generateVideo() {
+    const prompt = document.getElementById('promptInput').value.trim();
+    if (!prompt) {
+      document.querySelector('.prompt-box').style.boxShadow = '0 0 0 2px var(--accent2)';
+      setTimeout(() => document.querySelector('.prompt-box').style.boxShadow = '', 1000);
+      document.getElementById('promptInput').focus();
+      return;
+    }
+
+    showState('loading');
+    document.getElementById('generateBtn').disabled = true;
+    document.getElementById('statusText').textContent = 'Generating';
+    startFakeProgress();
+
+    try {
+      const resp = await fetch('/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt,
+          style: styleModifier,
+          resolution: document.getElementById('resolutionSelect').value,
+          steps: document.getElementById('stepsSelect').value
+        })
+      });
+
+      const data = await resp.json();
+      stopFakeProgress();
+
+      if (!resp.ok || data.error) {
+        throw new Error(data.error || `Server error ${resp.status}`);
+      }
+
+      setProgress(100, 'Done!');
+      currentVideoUrl = data.video_url;
+
+      setTimeout(() => {
+        document.getElementById('outputVideo').src = currentVideoUrl;
+        showState('result');
+        document.getElementById('statusText').textContent = 'Done';
+        document.getElementById('generateBtn').disabled = false;
+        addToHistory(currentVideoUrl, prompt);
+      }, 400);
+
+    } catch (err) {
+      stopFakeProgress();
+      document.getElementById('generateBtn').disabled = false;
+      document.getElementById('errorMsg').textContent = err.message;
+      document.getElementById('statusText').textContent = 'Error';
+      showState('error');
+    }
+  }
+
+  function downloadVideo() {
+    if (!currentVideoUrl) return;
+    const a = document.createElement('a');
+    a.href = currentVideoUrl;
+    a.download = 'videx-output.mp4';
+    a.target = '_blank';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  function addToHistory(url, prompt) {
+    const strip = document.getElementById('historyStrip');
+    const empty = strip.querySelector('.history-empty');
+    if (empty) empty.remove();
+
+    const item = document.createElement('div');
+    item.className = 'history-item';
+    item.innerHTML = `
+      <div class="history-thumb">
+        <video src="${url}" muted loop playsinline></video>
+      </div>
+      <div class="history-title">${prompt.substring(0, 18)}...</div>
+    `;
+    const vid = item.querySelector('video');
+    item.addEventListener('mouseenter', () => vid.play());
+    item.addEventListener('mouseleave', () => { vid.pause(); vid.currentTime = 0; });
+    item.addEventListener('click', () => {
+      currentVideoUrl = url;
+      document.getElementById('outputVideo').src = url;
+      showState('result');
+    });
+    strip.insertBefore(item, strip.firstChild);
+  }
+</script>
+</body>
+</html>
